@@ -11,7 +11,7 @@ import OpenAI from "openai";
 ffmpeg.setFfmpegPath(ffmpegPath);
 const app = express();
 const upload = multer({ dest: "/tmp" });
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -61,7 +61,9 @@ app.post("/upload", upload.single("file"), async (req, res) => {
           contents: [
             {
               parts: [
-                { text: `Ringkas teks berikut dalam bahasa Indonesia:\n\n${transcript}` },
+                {
+                  text: `Ringkas teks berikut dalam bahasa Indonesia:\n\n${transcript}`,
+                },
               ],
             },
           ],
