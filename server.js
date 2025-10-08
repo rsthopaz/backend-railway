@@ -39,7 +39,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       });
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY2;
     console.log("Using Gemini Key:", geminiKey ? "✅ Loaded" : "❌ Not Found");
 
     const audioBase64 = fs.readFileSync(audioPath, { encoding: "base64" });
