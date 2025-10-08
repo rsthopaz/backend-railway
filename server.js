@@ -15,13 +15,15 @@ console.log("🎬 Using ffmpeg from:", ffmpegInstaller.path);
 const localFfmpeg = ffmpegInstaller.path;
 const systemFfmpeg = "/usr/bin/ffmpeg"; // lokasi umum di Railway container
 
+let ffmpegPathToUse = localFfmpeg;
+
+
 if (existsSync(systemFfmpeg)) {
-  ffmpeg.setFfmpegPath(systemFfmpeg);
-  console.log("✅ Using system ffmpeg:", systemFfmpeg);
-} else {
-  ffmpeg.setFfmpegPath(localFfmpeg);
-  console.log("⚙️ Using local ffmpeg:", localFfmpeg);
+  ffmpegPathToUse = systemFfmpeg;
 }
+
+ffmpeg.setFfmpegPath(ffmpegPathToUse);
+console.log("🎬 ffmpeg path set to:", ffmpegPathToUse);
 
 const app = express();
 const upload = multer({ dest: "/tmp" });
