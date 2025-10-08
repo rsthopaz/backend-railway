@@ -3,13 +3,13 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
-import fsSync from "fs"; // buat createReadStream
+import fsSync from "fs";   // untuk createReadStream
 import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
 import fetch from "node-fetch";
 import OpenAI from "openai";
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+// ✅ pakai ffmpeg bawaan sistem (bukan ffmpeg-static)
+ffmpeg.setFfmpegPath("ffmpeg");
 
 const app = express();
 const upload = multer({ dest: "/tmp" });
@@ -28,7 +28,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const ext = path.extname(req.file.originalname).toLowerCase();
     let audioPath = filePath;
 
-    // Jika input berupa video, konversi ke WAV
+    // ✅ Jika input berupa video, konversi ke WAV
     if ([".mp4", ".mov", ".avi", ".mkv"].includes(ext)) {
       audioPath = filePath + ".wav";
       await new Promise((resolve, reject) => {
@@ -42,15 +42,15 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       });
     }
 
-    // Transkripsi menggunakan OpenAI Whisper API
+    // ✅ Transkripsi menggunakan OpenAI Whisper API
     const result = await openai.audio.transcriptions.create({
-      file: fsSync.createReadStream(audioPath),
+      file: fsSync.createReadStream(audioPath), // pakai stream, bukan Blob
       model: "whisper-1",
     });
 
     const transcript = result.text;
 
-    // Ringkas hasil dengan Gemini API
+    // ✅ Ringkas hasil dengan Gemini API
     const geminiKey = process.env.GEMINI_API_KEY;
     const summaryRes = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
@@ -80,16 +80,16 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       summaryJson?.error?.message ||
       "Ringkasan tidak ditemukan.";
 
-    // Hapus file sementara
+    // ✅ Hapus file sementara
+    await fs.unlink(filePath).catch(() => {});
     if (audioPath !== filePath) {
       await fs.unlink(audioPath).catch(() => {});
     }
-    await fs.unlink(filePath).catch(() => {});
 
     res.json({ transcript, summary });
   } catch (err) {
-    console.error("Error in /upload:", err);
-    res.status(500).json({ error: err.message });
+    console.error("🔥 Error in /upload:", err);
+    res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
 
