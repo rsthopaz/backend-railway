@@ -5,10 +5,11 @@ import path from "path";
 import fs from "fs";
 import fsp from "fs/promises";
 import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import fetch from "node-fetch";
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+console.log("🎬 Using ffmpeg from:", ffmpegInstaller.path);
 
 const app = express();
 const upload = multer({ dest: "/tmp" });
