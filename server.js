@@ -2,42 +2,33 @@ import "dotenv/config";
 import express from "express";
 import multer from "multer";
 import path from "path";
-import fs from "fs/promises";
-import fsSync from "fs";   // untuk createReadStream
+import fs from "fs";
+import fsp from "fs/promises";
 import ffmpeg from "fluent-ffmpeg";
+import ffmpegPath from "ffmpeg-static";
 import fetch from "node-fetch";
 import OpenAI from "openai";
 
-// ✅ pakai ffmpeg bawaan sistem (bukan ffmpeg-static)
-ffmpeg.setFfmpegPath("ffmpeg");
-
+ffmpeg.setFfmpegPath(ffmpegPath);
 const app = express();
 const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 8080;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const test = async () => {
-  try {
-    const resp = await openai.models.list();
-    console.log("✅ OpenAI API reachable:", resp.data[0].id);
-  } catch (e) {
-    console.error("❌ Cannot reach OpenAI API:", e);
-  }
-};
-test();
 
 app.get("/", (req, res) => res.send("✅ Railway server is alive"));
 
 // === Route utama ===
 app.post("/upload", upload.single("file"), async (req, res) => {
+  let filePath, audioPath;
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const filePath = req.file.path;
+    filePath = req.file.path;
     const ext = path.extname(req.file.originalname).toLowerCase();
-    let audioPath = filePath;
+    audioPath = filePath;
 
-    // ✅ Jika input berupa video, konversi ke WAV
+    // Jika input berupa video, konversi ke WAV
     if ([".mp4", ".mov", ".avi", ".mkv"].includes(ext)) {
       audioPath = filePath + ".wav";
       await new Promise((resolve, reject) => {
@@ -51,15 +42,20 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       });
     }
 
-    // ✅ Transkripsi menggunakan OpenAI Whisper API
-    const result = await openai.audio.transcriptions.create({
-      file: fsSync.createReadStream(audioPath), // pakai stream, bukan Blob
-      model: "whisper-1",
-    });
+    // Transkripsi menggunakan OpenAI Whisper API
+    const result = await Promise.race([
+      openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath), // ✅ pakai stream
+        model: "whisper-1",
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout after 30s")), 30000)
+      ),
+    ]);
 
     const transcript = result.text;
 
-    // ✅ Ringkas hasil dengan Gemini API
+    // Ringkas hasil dengan Gemini API
     const geminiKey = process.env.GEMINI_API_KEY;
     const summaryRes = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
@@ -89,16 +85,14 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       summaryJson?.error?.message ||
       "Ringkasan tidak ditemukan.";
 
-    // ✅ Hapus file sementara
-    await fs.unlink(filePath).catch(() => {});
-    if (audioPath !== filePath) {
-      await fs.unlink(audioPath).catch(() => {});
-    }
-
     res.json({ transcript, summary });
   } catch (err) {
     console.error("🔥 Error in /upload:", err);
-    res.status(500).json({ error: err.message, stack: err.stack });
+    res.status(500).json({ error: err.message });
+  } finally {
+    // Hapus file sementara
+    if (filePath) await fsp.unlink(filePath).catch(() => {});
+    if (audioPath && audioPath !== filePath) await fsp.unlink(audioPath).catch(() => {});
   }
 });
 
