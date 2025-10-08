@@ -3,17 +3,20 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
+import fsSync from "fs"; // untuk stream
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import fetch from "node-fetch";
 import OpenAI from "openai";
 
-ffmpeg.setFfmpegPath(ffmpeg);
+ffmpeg.setFfmpegPath(ffmpegPath); // ✅ perbaikan
 const app = express();
 const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 8080;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+app.get("/", (req, res) => res.send("✅ Railway server is alive"));
 
 // === Route utama ===
 app.post("/upload", upload.single("file"), async (req, res) => {
@@ -39,9 +42,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     // Transkripsi menggunakan OpenAI Whisper API
-    const audioStream = await fs.readFile(audioPath);
     const result = await openai.audio.transcriptions.create({
-      file: new Blob([audioStream]),
+      file: fsSync.createReadStream(audioPath), // ✅ pakai stream
       model: "whisper-1",
     });
 
@@ -79,7 +81,9 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     // Hapus file sementara
     await fs.unlink(filePath).catch(() => {});
-    await fs.unlink(audioPath).catch(() => {});
+    if (audioPath !== filePath) {
+      await fs.unlink(audioPath).catch(() => {});
+    }
 
     res.json({ transcript, summary });
   } catch (err) {
@@ -88,4 +92,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
