@@ -3,13 +3,14 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
-import fsSync from "fs"; // untuk stream
+import fsSync from "fs"; // buat createReadStream
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import fetch from "node-fetch";
 import OpenAI from "openai";
 
-ffmpeg.setFfmpegPath(ffmpegPath); // ✅ perbaikan
+ffmpeg.setFfmpegPath(ffmpegPath);
+
 const app = express();
 const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 8080;
@@ -43,7 +44,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
     // Transkripsi menggunakan OpenAI Whisper API
     const result = await openai.audio.transcriptions.create({
-      file: fsSync.createReadStream(audioPath), // ✅ pakai stream
+      file: fsSync.createReadStream(audioPath),
       model: "whisper-1",
     });
 
@@ -80,10 +81,10 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       "Ringkasan tidak ditemukan.";
 
     // Hapus file sementara
-    await fs.unlink(filePath).catch(() => {});
     if (audioPath !== filePath) {
       await fs.unlink(audioPath).catch(() => {});
     }
+    await fs.unlink(filePath).catch(() => {});
 
     res.json({ transcript, summary });
   } catch (err) {
@@ -92,6 +93,4 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-app.listen(PORT, "0.0.0.0", () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
