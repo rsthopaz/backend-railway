@@ -1,30 +1,30 @@
+import "dotenv/config";
 import express from "express";
 import multer from "multer";
-import { spawn } from "child_process";
 import path from "path";
 import fs from "fs/promises";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import fetch from "node-fetch";
+import OpenAI from "openai";
 
-ffmpeg.setFfmpegPath(ffmpegPath); // gunakan ffmpeg-static yang cocok untuk Railway
-
+ffmpeg.setFfmpegPath(ffmpegPath);
 const app = express();
-const upload = multer({ dest: "/tmp" }); // lokasi penyimpanan sementara
+const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 3000;
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // === Route utama ===
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
     const filePath = req.file.path;
     const ext = path.extname(req.file.originalname).toLowerCase();
     let audioPath = filePath;
 
-    // Konversi ke WAV kalau input berupa video
+    // Jika input berupa video, konversi ke WAV
     if ([".mp4", ".mov", ".avi", ".mkv"].includes(ext)) {
       audioPath = filePath + ".wav";
       await new Promise((resolve, reject) => {
@@ -38,36 +38,16 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       });
     }
 
-    // Jalankan whisper-cli (pastikan sudah build di folder whisper)
-const whisperPath = path.join(process.cwd(), "whisper/whisper.cpp/build/bin/whisper-cli");
-const modelPath = path.join(process.cwd(), "whisper/whisper.cpp/models/ggml-small.bin");
-
-
-    const whisperProc = spawn(whisperPath, [
-      "-m",
-      modelPath,
-      "-f",
-      audioPath,
-      "-otxt",
-    ]);
-
-    let stderr = "";
-    whisperProc.stderr.on("data", (data) => (stderr += data.toString()));
-
-    await new Promise((resolve, reject) => {
-      whisperProc.on("close", (code) =>
-        code === 0 ? resolve() : reject(new Error(stderr))
-      );
+    // Transkripsi menggunakan OpenAI Whisper API
+    const audioStream = await fs.readFile(audioPath);
+    const result = await openai.audio.transcriptions.create({
+      file: new Blob([audioStream]),
+      model: "whisper-1",
     });
 
-    // Baca hasil transkrip dari file .txt (hasil whisper)
-    const transcriptPath = audioPath + ".txt";
-    let transcript = "Transkrip tidak ditemukan.";
-    try {
-      transcript = await fs.readFile(transcriptPath, "utf-8");
-    } catch {}
+    const transcript = result.text;
 
-    // Panggil API Gemini untuk meringkas hasil
+    // Ringkas hasil dengan Gemini API
     const geminiKey = process.env.GEMINI_API_KEY;
     const summaryRes = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
@@ -81,9 +61,7 @@ const modelPath = path.join(process.cwd(), "whisper/whisper.cpp/models/ggml-smal
           contents: [
             {
               parts: [
-                {
-                  text: `Ringkas teks berikut dalam bahasa Indonesia:\n\n${transcript}`,
-                },
+                { text: `Ringkas teks berikut dalam bahasa Indonesia:\n\n${transcript}` },
               ],
             },
           ],
@@ -100,9 +78,8 @@ const modelPath = path.join(process.cwd(), "whisper/whisper.cpp/models/ggml-smal
     // Hapus file sementara
     await fs.unlink(filePath).catch(() => {});
     await fs.unlink(audioPath).catch(() => {});
-    await fs.unlink(transcriptPath).catch(() => {});
 
-    return res.json({ transcript, summary });
+    res.json({ transcript, summary });
   } catch (err) {
     console.error("Error in /upload:", err);
     res.status(500).json({ error: err.message });

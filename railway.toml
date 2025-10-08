@@ -1,0 +1,5 @@
+[build]
+builder = "Node"
+
+[deploy]
+start = "npm start"
