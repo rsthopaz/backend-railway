@@ -8,7 +8,7 @@ import ffmpegPath from "ffmpeg-static";
 import fetch from "node-fetch";
 import OpenAI from "openai";
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfmpegPath(ffmpeg);
 const app = express();
 const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 8080;
