@@ -7,18 +7,15 @@ import fsp from "fs/promises";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import fetch from "node-fetch";
-import OpenAI from "openai";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
+
 const app = express();
 const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 8080;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 app.get("/", (req, res) => res.send("✅ Railway server is alive"));
 
-// === Route utama ===
 app.post("/upload", upload.single("file"), async (req, res) => {
   let filePath, audioPath;
   try {
@@ -28,7 +25,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const ext = path.extname(req.file.originalname).toLowerCase();
     audioPath = filePath;
 
-    // Jika input berupa video, konversi ke WAV
+    // convert video → audio (jika perlu)
     if ([".mp4", ".mov", ".avi", ".mkv"].includes(ext)) {
       audioPath = filePath + ".wav";
       await new Promise((resolve, reject) => {
@@ -42,35 +39,54 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       });
     }
 
-    // Transkripsi menggunakan OpenAI Whisper API
-    const result = await Promise.race([
-      openai.audio.transcriptions.create({
-        file: fs.createReadStream(audioPath), // ✅ pakai stream
-        model: "whisper-1",
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout after 300s")), 300000)
-      ),
-    ]);
-
-    const transcript = result.text;
-
-    // Ringkas hasil dengan Gemini API
     const geminiKey = process.env.GEMINI_API_KEY;
-    const summaryRes = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+    console.log("Using Gemini Key:", geminiKey ? "✅ Loaded" : "❌ Not Found");
+
+    const audioBase64 = fs.readFileSync(audioPath, { encoding: "base64" });
+
+    // === Transkripsi ===
+    const transcriptRes = await fetch(
+      "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-goog-api-key": geminiKey,
+          "x-goog-api-key": geminiKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: "Transkripsikan audio berikut dalam bahasa Indonesia:" },
+                { inlineData: { mimeType: "audio/wav", data: audioBase64 } },
+              ],
+            },
+          ],
+        }),
+      }
+    );
+
+    const transcriptJson = await transcriptRes.json();
+    const transcript =
+      transcriptJson?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      transcriptJson?.error?.message ||
+      "Transkripsi gagal.";
+
+    // === Ringkasan ===
+    const summaryRes = await fetch(
+      "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiKey,
         },
         body: JSON.stringify({
           contents: [
             {
               parts: [
                 {
-                  text: `Ringkas teks berikut dalam bahasa Indonesia:\n\n${transcript}`,
+                  text: `Ringkas teks berikut dalam bahasa Indonesia dalam bentuk poin-poin mudah dipahami:\n\n${transcript}`,
                 },
               ],
             },
@@ -83,14 +99,13 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const summary =
       summaryJson?.candidates?.[0]?.content?.parts?.[0]?.text ||
       summaryJson?.error?.message ||
-      "Ringkasan tidak ditemukan.";
+      "Ringkasan gagal.";
 
     res.json({ transcript, summary });
   } catch (err) {
     console.error("🔥 Error in /upload:", err);
     res.status(500).json({ error: err.message });
   } finally {
-    // Hapus file sementara
     if (filePath) await fsp.unlink(filePath).catch(() => {});
     if (audioPath && audioPath !== filePath) await fsp.unlink(audioPath).catch(() => {});
   }
