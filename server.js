@@ -7,9 +7,21 @@ import fsp from "fs/promises";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import fetch from "node-fetch";
+import { existsSync } from "fs";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 console.log("🎬 Using ffmpeg from:", ffmpegInstaller.path);
+
+const localFfmpeg = ffmpegInstaller.path;
+const systemFfmpeg = "/usr/bin/ffmpeg"; // lokasi umum di Railway container
+
+if (existsSync(systemFfmpeg)) {
+  ffmpeg.setFfmpegPath(systemFfmpeg);
+  console.log("✅ Using system ffmpeg:", systemFfmpeg);
+} else {
+  ffmpeg.setFfmpegPath(localFfmpeg);
+  console.log("⚙️ Using local ffmpeg:", localFfmpeg);
+}
 
 const app = express();
 const upload = multer({ dest: "/tmp" });
