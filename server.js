@@ -49,7 +49,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         model: "whisper-1",
       }),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout after 30s")), 30000)
+        setTimeout(() => reject(new Error("Timeout after 300s")), 300000)
       ),
     ]);
 
