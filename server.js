@@ -16,6 +16,15 @@ const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 8080;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const test = async () => {
+  try {
+    const resp = await openai.models.list();
+    console.log("✅ OpenAI API reachable:", resp.data[0].id);
+  } catch (e) {
+    console.error("❌ Cannot reach OpenAI API:", e);
+  }
+};
+test();
 
 app.get("/", (req, res) => res.send("✅ Railway server is alive"));
 
