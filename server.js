@@ -9,30 +9,54 @@ import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import fetch from "node-fetch";
 import { existsSync } from "fs";
 
+// =======================
+// Setup FFmpeg
+// =======================
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 console.log("🎬 Using ffmpeg from:", ffmpegInstaller.path);
 
 const localFfmpeg = ffmpegInstaller.path;
-const systemFfmpeg = "/usr/bin/ffmpeg"; // lokasi umum di Railway container
+const systemFfmpeg = "/usr/bin/ffmpeg";
 
-let ffmpegPathToUse = localFfmpeg;
-
-
-if (existsSync(systemFfmpeg)) {
-  ffmpegPathToUse = systemFfmpeg;
-}
-
+let ffmpegPathToUse = existsSync(systemFfmpeg) ? systemFfmpeg : localFfmpeg;
 ffmpeg.setFfmpegPath(ffmpegPathToUse);
+
 console.log("🎬 ffmpeg path set to:", ffmpegPathToUse);
 
+// =======================
+// Senopati API helper
+// =======================
+const SENOPATI_BASE = "https://senopati.its.ac.id/senopati-lokal-dev";
+
+async function senopatiGenerate(prompt, model = null) {
+  const payload = { prompt };
+  if (model) payload.model = model;
+
+  const res = await fetch(`${SENOPATI_BASE}/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await res.json();
+  return json.response || json.message || JSON.stringify(json);
+}
+
+// =======================
+// Express setup
+// =======================
 const app = express();
 const upload = multer({ dest: "/tmp" });
 const PORT = process.env.PORT || 8080;
 
-app.get("/", (req, res) => res.send("✅ Railway server is alive"));
+app.get("/", (req, res) => res.send("✅ Railway server is alive + Senopati ready!"));
 
+// =======================
+// Main /upload endpoint
+// =======================
 app.post("/upload", upload.single("file"), async (req, res) => {
   let filePath, audioPath;
+
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
@@ -40,7 +64,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const ext = path.extname(req.file.originalname).toLowerCase();
     audioPath = filePath;
 
-    // convert video → audio (jika perlu)
+    // ✅ Convert video → audio (WAV 16k mono)
     if ([".mp4", ".mov", ".avi", ".mkv"].includes(ext)) {
       audioPath = filePath + ".wav";
       await new Promise((resolve, reject) => {
@@ -55,11 +79,15 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     const geminiKey = process.env.GEMINI_API_KEY2;
-    console.log("Using Gemini Key:", geminiKey ? "✅ Loaded" : "❌ Not Found");
+    if (!geminiKey) {
+      return res.status(500).json({ error: "Missing GEMINI_API_KEY2" });
+    }
 
     const audioBase64 = fs.readFileSync(audioPath, { encoding: "base64" });
 
-    // === Transkripsi ===
+    // =======================
+    // ✅ 1) Transkripsi pakai Gemini
+    // =======================
     const transcriptRes = await fetch(
       "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent",
       {
@@ -87,36 +115,20 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       transcriptJson?.error?.message ||
       "Transkripsi gagal.";
 
-    // === Ringkasan ===
-    const summaryRes = await fetch(
-      "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": geminiKey,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `Ringkas teks berikut dalam bahasa Indonesia dalam bentuk poin-poin mudah dipahami:\n\n${transcript}`,
-                },
-              ],
-            },
-          ],
-        }),
-      }
+    // =======================
+    // ✅ 2) Ringkasan pakai Senopati
+    // =======================
+    const summary = await senopatiGenerate(
+      `Ringkas teks berikut dalam poin bahasa Indonesia:\n\n${transcript}`,
+      "qwen2.5:latest" // opsional (hapus jika tidak butuh)
     );
 
-    const summaryJson = await summaryRes.json();
-    const summary =
-      summaryJson?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      summaryJson?.error?.message ||
-      "Ringkasan gagal.";
+    res.json({
+      status: "success",
+      transcript,
+      summary,
+    });
 
-    res.json({ transcript, summary });
   } catch (err) {
     console.error("🔥 Error in /upload:", err);
     res.status(500).json({ error: err.message });
