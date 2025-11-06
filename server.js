@@ -116,11 +116,15 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       "Transkripsi gagal.";
 
     // =======================
-    // ✅ 2) Ringkasan pakai Senopati
+    // ✅ 2) Ringkasan pakai Senopati (Llama 3)
     // =======================
     const summary = await senopatiGenerate(
-      `Ringkas teks berikut dalam poin bahasa Indonesia:\n\n${transcript}`,
-      "qwen2.5:latest" // opsional (hapus jika tidak butuh)
+      `Buat ringkasan dalam poin-poin yang singkat, jelas, dan rapi. Tetap memperhatikan dari konteks yang ditranskrip.
+      
+Teks yang diringkas:
+
+${transcript}`,
+      "llama3:latest" // ✅ menggunakan LLAMA 3
     );
 
     res.json({
@@ -138,4 +142,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
